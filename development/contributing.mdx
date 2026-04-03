@@ -1,0 +1,105 @@
+---
+title: "Contributing"
+description: "How to set up a development environment and contribute to Simple Trade."
+---
+
+<Note>
+  Simple Trade is a GitHub Classroom project developed at IUS (Indiana University Southeast). Contributions follow standard GitHub flow: fork the repository, create a feature branch, and open a pull request for review.
+</Note>
+
+## Prerequisites
+
+You need the same tools required for a production build:
+
+- **Node.js v16+** — run `node -v` and `npm -v` to verify.
+- **CMake v3.24+** — run `cmake --version` to verify.
+- **Windows only**: Visual Studio (for the MSVC toolchain) and `nmake`.
+
+See [Installation](/installation) for download links and setup instructions.
+
+## Development build vs. production build
+
+| | Development | Production |
+|--|-------------|------------|
+| Frontend | Vite dev server (`localhost:5173`) | Built to `dist/index.html` |
+| Hot reload | Yes (via Vite HMR) | No |
+| Backend build | Same CMake process | Same CMake process |
+| Launched by | `npm run dev` | `./Binance_Websockets.exe` |
+
+In production, the C++ backend loads `dist/index.html` directly as a `file://` URL inside the webview window. In development, you run the Vite dev server separately and load it in a browser while the backend handles WebSocket data.
+
+<Info>
+  A `TODO` comment in `src/Binance_Websockets.cpp:95` notes a planned flag or argument that would make the backend point to Vite's dev server instead of the built `index.html`, enabling hot-reload workflows without switching tools.
+</Info>
+
+## Frontend dev server
+
+```bash
+cd MarketUI
+npm install
+npm run dev   # starts Vite dev server at localhost:5173
+```
+
+With the dev server running, you can edit React components and see changes reflected immediately via Vite's hot module replacement, without rebuilding the entire frontend or restarting the backend.
+
+## Code style
+
+### C++ standard
+
+`CMakeLists.txt` enforces C++17 as the minimum standard:
+
+```cmake
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+```
+
+Do not use language features that require C++20 or later.
+
+### Header guards
+
+Use `#pragma once` at the top of every header file. Do not use `#ifndef`/`#define` include guards.
+
+### Naming conventions
+
+Follow the naming conventions already established in the codebase:
+
+- **Classes and methods**: PascalCase — e.g., `ExchangeClient`, `HandleMessages`, `SetOnOpen`.
+- **Local variables**: PascalCase — e.g., `ServerThread`, `IsReady`, `FutureServerReady`.
+- **Member variables**: PascalCase — e.g., `Server`, `BinanceKline`.
+
+### File organization
+
+- C++ source files live in `src/`.
+- C++ test files live in `test/`.
+- React components live in `MarketUI/src/`.
+- Each new test executable must be registered in `CMakeLists.txt` with `gtest_discover_tests()`.
+
+## Adding a new coin
+
+The list of tracked coins is a `vector<string>` in `src/Binance_Websockets.cpp:105`. Add the Binance ticker symbol (lowercase) to include it in the watchlist and start streaming its 1-minute candlestick data:
+
+```cpp
+vector<string> coins = {"btcusdt", "ethusdt", "adausdt",
+                        "xrpusdt", "dotusdt", "uniusdt"};
+```
+
+Each entry in the vector causes the backend to open a separate `ExchangeClient` connection on its own thread, so adding a coin has a direct impact on the number of concurrent WebSocket connections.
+
+## Running tests
+
+After making changes, run both test suites before opening a pull request.
+
+**Frontend:**
+
+```bash
+cd MarketUI
+npm test
+```
+
+**Backend** (from the `build/` directory after a CMake build):
+
+```bash
+ctest --verbose
+```
+
+See [Testing](/development/testing) for a full description of what each test suite covers.

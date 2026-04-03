@@ -1,0 +1,150 @@
+---
+title: "Testing"
+description: "Run and write tests for the Simple Trade frontend and backend."
+---
+
+Simple Trade has two test suites: a frontend suite powered by Vitest and a backend suite powered by Google Test, discovered and run via CTest.
+
+## Frontend tests
+
+Navigate to the `MarketUI/` directory and run:
+
+```bash
+npm test
+```
+
+The frontend uses [Vitest](https://vitest.dev/) as its test runner. The current suite in `MarketUI/src/App.test.jsx` contains one passing test and a set of planned tests:
+
+```jsx
+import { expect, test, describe, it } from 'vitest'
+import { WebSocket } from './WebSocket.jsx'
+
+// Basic test - tests that tests work.
+test('1 + 1', () => {
+  expect(1 + 1).toEqual(2)
+});
+
+describe('Testing Plan', () => {
+  it.todo('should determine if ShowPrice updates on a new price');
+  it.todo('should determine that each link is clickable');
+  it.todo('should determine that serialized JSONs are received and parsed accurately');
+})
+```
+
+The `it.todo` entries mark tests that are planned but not yet implemented. They appear in the test output without failing the suite.
+
+## Backend tests
+
+After building with CMake, run the full backend test suite from the `build/` directory:
+
+```bash
+ctest
+```
+
+<Tip>
+  Run `ctest --verbose` to see individual test names and pass/fail output for every test case, including those from IXWebSocket's own suite.
+</Tip>
+
+CMake registers tests automatically via `gtest_discover_tests()`. Two project-specific test executables are built: `SmokeTest` and `ExchangeClientTest`. Note that all test suites for the bundled dependencies (IXWebSocket, webview) are also registered and will run as part of `ctest`.
+
+### SmokeTest
+
+`SmokeTest` (`test/SmokeTest.cpp`) is a prototype suite that validates the test infrastructure itself and basic JSON behavior using nlohmann/json:
+
+- **`dummytest/test`** — confirms the test runner is working (`EXPECT_EQ(1, 1)`).
+- **`JSONSuite/OnePairTest`** — constructs a JSON object two ways and asserts both serialize to the expected string.
+
+```cpp
+TEST(JSONSuite, OnePairTest) {
+  json TestingJSON1 = {{"Item", 7}};
+  json TestingJSON2;
+  TestingJSON2["Item"] = 2;
+
+  EXPECT_TRUE(TestingJSON1.dump() == "{\"Item\":7}");
+  EXPECT_TRUE(TestingJSON2.dump() == "{\"Item\":2}");
+}
+```
+
+### ExchangeClientTest
+
+`ExchangeClientTest` (`test/ExchangeClientTest.cpp`) tests the `ExchangeClient` class. It is split into two groups: mocking tests that inject fake messages directly, and live-socket tests that connect to a real local server.
+
+#### Test fixture
+
+The `ExchangeClientTest` class derives from `::testing::Test` and uses `SetUpTestSuite` / `TearDownTestSuite` to spin up a shared `ix::WebSocketServer` on port `9999` once for the entire suite — rather than before each individual test. The server sends a real Binance kline payload (captured from a live run) to any client that connects.
+
+```cpp
+static void SetUpTestSuite() {
+  promise<bool> IsReady;
+  future<bool> FutureServerReady = IsReady.get_future();
+
+  Server = std::make_unique<ix::WebSocketServer>(9999, "127.0.0.1");
+
+  Server->setOnClientMessageCallback(
+      [BinanceKline = BinanceKline](
+          std::shared_ptr<ix::ConnectionState> connectionState,
+          ix::WebSocket &webSocket,
+          const ix::WebSocketMessagePtr &msg) -> void {
+        if (msg->type == ix::WebSocketMessageType::Open) {
+          webSocket.send(BinanceKline.dump(0));
+        }
+      });
+
+  ServerThread = thread([]() { Server->listenAndStart(); });
+  IsReady.set_value(Server->getPort());
+  FutureServerReady.wait_for(chrono::seconds(1));
+}
+```
+
+`TearDownTestSuite` stops the server, joins its thread, and resets the pointer.
+
+#### ExchangeClientTestMocking
+
+These tests use `MockClientHooks` (a GMock class) and `TestClient` (a subclass that exposes the `protected` `HandleMessages` method) to inject `ix::WebSocketMessage` objects directly — no network required.
+
+| Test | What it verifies |
+|------|-----------------|
+| `Sequence_Open_Message_Error_Close` | All four message types (Open, Message, Error, Close) fire their registered callbacks in order using `testing::InSequence`. |
+| `Client_Processes_20_Opens` | 20 rapid Open messages each invoke `OnOpen()` exactly once. |
+| `Client_Processes_20_Messages` | 20 rapid Message events each invoke `OnMessage()` with the expected JSON string. |
+| `Client_Processes_20_Closes` | 20 rapid Close messages each invoke `OnClose()` exactly once. |
+| `Client_Processes_20_Errors` | 20 rapid Error messages each invoke `OnError()` exactly once. |
+
+Example — the sequence test:
+
+```cpp
+TEST(ExchangeClientTestMocking, Sequence_Open_Message_Error_Close) {
+  TestClient Client;
+  MockClientHooks Hooks;
+
+  Client.SetOnOpen([&]() { Hooks.OnOpen(); });
+  Client.SetOnMessage([&](const string &msg) { Hooks.OnMessage(msg); });
+  Client.SetOnError([&](const string &msg) { Hooks.OnError(msg); });
+  Client.SetOnClose([&]() { Hooks.OnClose(); });
+
+  {
+    testing::InSequence Sequence;
+    EXPECT_CALL(Hooks, OnOpen());
+    EXPECT_CALL(Hooks, OnMessage(testing::HasSubstr("btcusdt")));
+    EXPECT_CALL(Hooks, OnError(testing::HasSubstr("")));
+    EXPECT_CALL(Hooks, OnClose());
+  }
+
+  Client.HandleMessages(FakeMessages(ix::WebSocketMessageType::Open));
+  Client.HandleMessages(
+      FakeMessages(ix::WebSocketMessageType::Message, "{\"s\":\"btcusdt\"}"));
+  Client.HandleMessages(FakeMessages(ix::WebSocketMessageType::Error, ""));
+  Client.HandleMessages(FakeMessages(ix::WebSocketMessageType::Close));
+};
+```
+
+#### ExchangeClientTest (live socket)
+
+These tests use `TEST_F` with the shared server fixture and make real TCP connections to `ws://127.0.0.1:9999`.
+
+| Test | What it verifies |
+|------|-----------------|
+| `ClientSocketOpens` | `ExchangeClient` can open a real connection; `OnOpen` fires within 1 second. |
+| `ClientSocketGetsMessage` | `ExchangeClient` receives a non-empty message from the server. |
+| `ClientSocketCloses` | A close message injected via `HandleMessages` fires `OnClose` and sets the socket state to `Closed`. |
+| `ClientSocketErrors` | An error message injected via `HandleMessages` fires `OnError` and the socket state is `Closed`. |

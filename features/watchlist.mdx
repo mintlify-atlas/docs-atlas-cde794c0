@@ -1,0 +1,82 @@
+---
+title: "Coin Watchlist"
+description: "Switch between tracked coins using the Watchlist panel."
+---
+
+## What you see
+
+The Watchlist is a vertical panel on the left side of the Simple Trade interface, labeled **My Watchlist**. It lists all six tracked coins. Clicking any coin in the list makes it the active selection — the candlestick chart clears and rebuilds for that coin, and the price display switches to show its current price.
+
+<Tip>
+  The active coin is highlighted in the watchlist at all times, so you always know which pair the chart and price display are showing.
+</Tip>
+
+## Tracked coins
+
+| Symbol   | Name      |
+| -------- | --------- |
+| BTCUSDT  | Bitcoin   |
+| ETHUSDT  | Ethereum  |
+| ADAUSDT  | Cardano   |
+| XRPUSDT  | XRP       |
+| DOTUSDT  | Polkadot  |
+| UNIUSDT  | Uniswap   |
+
+The coin symbols are stored in a hardcoded array inside the `Watchlist` component. The `USDT` suffix is stripped from each symbol for a cleaner display — for example, `BTCUSDT` appears as **BTC** in the list.
+
+## What happens when you switch coins
+
+When you click a coin in the Watchlist:
+
+1. The `onCoin` callback fires, passing the selected symbol (e.g., `"ETHUSDT"`) up to `App.jsx`.
+2. `App.jsx` updates `currentCoin` state via `setCurrentCoin`.
+3. `useCryptoSocket` detects the coin change, clears its internal candle map, and resets `price` and `latestCandle` to `null`.
+4. The [candlestick chart](/features/live-charts) clears its series and waits for the first incoming candle.
+5. The [price display](/features/price-display) resets until the first tick for the new coin arrives.
+
+New data for the selected coin begins flowing as soon as the backend receives the next Binance Kline message for that pair.
+
+## Component props
+
+The `Watchlist` component accepts two props:
+
+| Prop          | Type       | Description                                                               |
+| ------------- | ---------- | ------------------------------------------------------------------------- |
+| `onCoin`      | `function` | Callback invoked with the selected coin symbol when a list item is clicked. |
+| `currentCoin` | `string`   | The currently active coin symbol. Used to apply the `active` CSS class to the matching list item. |
+
+### Usage in App.jsx
+
+```jsx
+<Watchlist onCoin={(c) => setCurrentCoin(c)} currentCoin={currentCoin} />
+```
+
+### Watchlist component
+
+```jsx
+const Watchlist = ({ onCoin, currentCoin }) => {
+  const coins = ["BTCUSDT", "ETHUSDT", "ADAUSDT", "XRPUSDT", "DOTUSDT", "UNIUSDT"];
+
+  return (
+    <div className="watchlist-wrapper-div">
+      <nav className="watchlist">
+        <h2>My Watchlist</h2>
+        <ul>
+          {coins.map((coin) => (
+            <li
+              key={coin}
+              className={currentCoin === coin ? "active" : ""}
+              onClick={() => onCoin(coin)}
+              style={{ cursor: 'pointer' }}
+            >
+              {coin.replace('USDT', '')}
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </div>
+  );
+}
+```
+
+The `active` class is applied to the `<li>` element whose symbol matches `currentCoin`, giving it a distinct visual style so you always know which coin is selected.

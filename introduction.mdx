@@ -1,0 +1,74 @@
+---
+title: "Introduction"
+description: "Simple Trade is an AI-assisted on-device trading application for major cryptocurrencies and stocks."
+---
+
+## What is Simple Trade?
+
+Simple Trade is a local desktop application that streams real-time cryptocurrency price data directly from Binance and renders it in an interactive charting interface. Everything runs on your machine — no cloud servers, no remote processing, and no data sent anywhere outside your device.
+
+The application opens as a native desktop window powered by a C++ backend that manages WebSocket connections to Binance's market data streams. A React frontend renders live candlestick charts and a coin watchlist inside that window.
+
+## Key value proposition
+
+Simple Trade is designed for users who want live market data without giving up control over their data. Because all processing happens on-device:
+
+- No account or API key is required to view market data.
+- Price data is never forwarded to a third-party server.
+- No cloud infrastructure is involved — data flows directly from Binance to your machine.
+
+## Tech stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend language | C++17 |
+| Build system | CMake v3.24+ |
+| WebSocket client | IXWebSocket |
+| JSON parsing | nlohmann/json |
+| Desktop window | webview |
+| Frontend framework | React 19 + Vite 7 |
+| Charting library | lightweight-charts 5 |
+| Frontend testing | Vitest |
+| Backend testing | GoogleTest |
+
+## Supported coins
+
+Simple Trade tracks six coins by default, subscribing to each coin's 1-minute candlestick stream on Binance US:
+
+- `btcusdt` — Bitcoin
+- `ethusdt` — Ethereum
+- `adausdt` — Cardano
+- `xrpusdt` — XRP
+- `dotusdt` — Polkadot
+- `uniusdt` — Uniswap
+
+## Features
+
+<Columns cols={3}>
+  <Card title="Live charts" icon="chart-candlestick">
+    Real-time candlestick charts update every minute using data streamed directly from Binance's WebSocket API.
+  </Card>
+  <Card title="Watchlist" icon="list">
+    A sidebar watchlist lets you switch between any of the six tracked coins without restarting the application.
+  </Card>
+  <Card title="On-device privacy" icon="shield">
+    All data stays on your machine. No accounts, no telemetry, no cloud — just a direct connection to Binance's public stream.
+  </Card>
+</Columns>
+
+## Where to go next
+
+<Columns cols={2}>
+  <Card title="Installation" icon="wrench" href="/installation">
+    Install dependencies, build the frontend and backend, and launch the application.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get Simple Trade running and tracking live crypto prices in minutes.
+  </Card>
+  <Card title="Architecture overview" icon="sitemap" href="/architecture/overview">
+    Understand how the C++ backend and React frontend communicate.
+  </Card>
+  <Card title="Exchange client reference" icon="code" href="/reference/exchange-client">
+    Read the API reference for the `ExchangeClient` class that connects to Binance.
+  </Card>
+</Columns>

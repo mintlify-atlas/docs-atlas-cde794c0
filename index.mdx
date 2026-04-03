@@ -1,97 +1,69 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Simple Trade"
+description: "An AI-assisted on-device trading application for major cryptocurrencies and stocks. Real-time candlestick charts, live price tracking, and a local-first architecture that keeps your data private."
 ---
 
-## Setting up
+Simple Trade is a desktop application that connects directly to Binance's WebSocket streams to deliver real-time candlestick charts and live price data for six major cryptocurrencies — all processed on your device, with no cloud dependency.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="wrench" href="/installation">
+    Set up dependencies, build the C++ backend and React frontend, and launch the app.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get Simple Trade running and tracking live crypto prices in minutes.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Architecture" icon="diagram-project" href="/architecture/overview">
+    Understand how the C++ backend, WebSocket server, and React frontend work together.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Reference" icon="book" href="/reference/exchange-client">
+    Explore the ExchangeClient, BinanceProcessor, and React component APIs.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What Simple Trade does
 
-Everything you need to create world-class documentation.
+Simple Trade streams live 1-minute candlestick (Kline) data from Binance for six coins — BTC, ETH, ADA, XRP, DOT, and UNI — and renders them in an interactive chart inside a native desktop window.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={3}>
+  <Card title="Live candlestick charts" icon="chart-candlestick">
+    Real-time 1-minute Kline data rendered with lightweight-charts.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Coin watchlist" icon="list">
+    Switch between tracked coins instantly with a single click.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="On-device only" icon="lock">
+    No cloud hosting. No user data leaves your machine.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## How it works
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="C++ backend connects to Binance">
+    The `Binance_Websockets` binary opens WebSocket connections to Binance's stream API for each coin and parses incoming Kline JSON into a simplified format.
+  </Step>
+  <Step title="Local WebSocket server relays data">
+    A local WebSocket server on `127.0.0.1:8080` forwards the cleaned market data to the frontend in real time.
+  </Step>
+  <Step title="React frontend renders charts">
+    The `useCryptoSocket` hook listens for incoming data, builds candle objects, and feeds them to the `CandlestickChart` component for live rendering.
+  </Step>
+  <Step title="User switches coins from the Watchlist">
+    Clicking a coin in the Watchlist updates the active coin state, clears the previous chart, and begins building a fresh candlestick series from the new data stream.
+  </Step>
+</Steps>
+
+## Supported coins
+
+| Ticker | Coin |
+|--------|------|
+| BTCUSDT | Bitcoin |
+| ETHUSDT | Ethereum |
+| ADAUSDT | Cardano |
+| XRPUSDT | XRP |
+| DOTUSDT | Polkadot |
+| UNIUSDT | Uniswap |
+
+<Note>
+  Simple Trade currently tracks a fixed set of coins defined at startup. The default list is `btcusdt`, `ethusdt`, `adausdt`, `xrpusdt`, `dotusdt`, and `uniusdt`.
+</Note>

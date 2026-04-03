@@ -1,0 +1,46 @@
+---
+title: "Architecture Overview"
+description: "How Simple Trade's C++ backend and React frontend work together to deliver real-time crypto data."
+---
+
+Simple Trade is a desktop application built from two processes that communicate over a local WebSocket connection:
+
+- **Backend** (`Binance_Websockets` binary): A C++ process that connects to Binance WebSocket streams, parses Kline data, and runs a local WebSocket server on `127.0.0.1:8080`.
+- **Frontend**: A React application embedded in a native desktop webview at 1200×800, consuming the local WebSocket stream and rendering candlestick charts.
+
+## Data flow
+
+<Steps>
+  <Step title="App starts">
+    The backend spawns a server thread (`StartServer`) and one thread per coin, each backed by an `ExchangeClient` instance.
+  </Step>
+  <Step title="ExchangeClient connects to Binance">
+    Each `ExchangeClient` opens a connection to `wss://stream.binance.us:9443/ws/{coin}@kline_1m`, subscribing to one-minute Kline candlestick events.
+  </Step>
+  <Step title="BinanceProcessor strips the payload">
+    On every incoming message, `BinanceProcessor::toSimpleKline()` maps raw Binance JSON fields to a minimal `OutboundJSONStruct` containing `EventTime`, `Coin`, `Open`, `Close`, `High`, `Low`, and `KlineFinished`.
+  </Step>
+  <Step title="Simplified JSON is broadcast">
+    The reduced JSON is serialized and sent to every connected local WebSocket client via `Server.getClients()`.
+  </Step>
+  <Step title="Frontend receives and renders">
+    The `useCryptoSocket` hook in the React frontend receives the message, filters by the currently selected coin, builds a candle object, and triggers a chart update.
+  </Step>
+</Steps>
+
+## Key design decisions
+
+**Separation of `ExchangeClient` from `BinanceProcessor`**: `ExchangeClient` owns only the WebSocket connection lifecycle (connect, callbacks, close). `BinanceProcessor` is a stateless JSON parser with no awareness of networking. This split makes both classes independently testable and opens the door to supporting exchanges other than Binance without touching the parsing logic.
+
+**Webview embedding**: The React frontend is not served over a network. The backend opens the compiled `index.html` build artifact directly in a native desktop window via the `webview` library, keeping the distribution self-contained.
+
+## Explore the architecture
+
+<CardGroup cols={2}>
+  <Card title="Backend architecture" icon="server" href="/architecture/backend">
+    How the C++ backend connects to Binance, parses market data, and serves it to the frontend.
+  </Card>
+  <Card title="Frontend architecture" icon="browser" href="/architecture/frontend">
+    How the React frontend receives live market data and renders candlestick charts.
+  </Card>
+</CardGroup>

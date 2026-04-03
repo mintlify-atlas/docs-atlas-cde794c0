@@ -1,0 +1,108 @@
+---
+title: "App"
+description: "The root state coordinator component that wires together all Simple Trade UI components."
+---
+
+## Overview
+
+`App` is the root React component of Simple Trade. It owns the `currentCoin` state and acts as the central coordinator — when `currentCoin` changes, every child component that depends on the active coin reacts accordingly.
+
+This pattern mirrors the **Observer** design: `App` is the subject that holds shared state, and `Watchlist`, `ShowPrice`, and `CandlestickChart` are the observers that re-render when that state changes.
+
+For a deeper explanation of how these pieces fit together architecturally, see [Frontend Architecture](/architecture/frontend).
+
+---
+
+## State
+
+<ParamField path="currentCoin" type="string" default="BTCUSDT">
+  The symbol of the currently active coin (e.g., `"BTCUSDT"`, `"ETHUSDT"`). Updated when the user selects a coin from the `Watchlist`.
+</ParamField>
+
+---
+
+## `useCryptoSocket` hook
+
+`App` calls the `useCryptoSocket` hook, passing `currentCoin` as the argument. The hook manages the WebSocket connection and returns live market data for the active coin.
+
+```jsx
+const { price, latestCandle } = useCryptoSocket(currentCoin);
+```
+
+### Return values
+
+<ParamField path="price" type="string">
+  The latest close price for the active coin, sourced from the most recent Kline message on the WebSocket stream. Updated on every tick.
+</ParamField>
+
+<ParamField path="latestCandle" type="object">
+  The most recently computed candle for the active coin.
+
+  <Expandable title="properties">
+    <ResponseField name="time" type="number">
+      Candle open timestamp in Unix seconds.
+    </ResponseField>
+    <ResponseField name="open" type="number">
+      Opening price of the candle interval.
+    </ResponseField>
+    <ResponseField name="high" type="number">
+      Highest price during the candle interval.
+    </ResponseField>
+    <ResponseField name="low" type="number">
+      Lowest price during the candle interval.
+    </ResponseField>
+    <ResponseField name="close" type="number">
+      Closing price of the candle interval (also the value exposed as `price`).
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+---
+
+## What App renders
+
+| Component          | Props passed                                     | Purpose                                   |
+| ------------------ | ------------------------------------------------ | ----------------------------------------- |
+| `Navbar`           | none                                             | Top navigation bar                        |
+| `Watchlist`        | `onCoin`, `currentCoin`                          | Coin selection panel                      |
+| `ShowPrice`        | `price`, `coin` (`currentCoin`)                  | Live price display                        |
+| `CandlestickChart` | `coin` (`currentCoin`), `latestCandle`           | Real-time 1-minute candlestick chart      |
+
+---
+
+## Source
+
+```jsx App.jsx
+import { useState } from 'react'
+import './App.css'
+import Navbar from './components/navBar'
+import Watchlist from './components/Watchlist'
+import useCryptoSocket from './useCryptoSocket'
+import ShowPrice from './components/ShowPrice'
+import CandlestickChart from './components/CandlestickChart'
+
+function App() {
+  const [currentCoin, setCurrentCoin] = useState('BTCUSDT');
+  const { price, latestCandle} = useCryptoSocket(currentCoin);
+
+  return (
+    <>
+      <Navbar />
+
+      <div className="App_header">
+        <h1>Simple Trade</h1>
+        <p>Your one-stop shop for all things crypto!</p>
+      </div>
+      <div className="main_layout">
+        <Watchlist onCoin={(c) => setCurrentCoin(c)} currentCoin={currentCoin} />
+        <div className="flex_row">
+          <ShowPrice price={price} coin={currentCoin} />
+          <CandlestickChart coin={currentCoin} latestCandle={latestCandle} />
+        </div>
+      </div>
+    </>
+  )
+}
+
+export default App
+```

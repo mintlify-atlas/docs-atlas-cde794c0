@@ -1,0 +1,65 @@
+---
+title: "Live Price Display"
+description: "View the latest price for the selected cryptocurrency, updated on every market tick."
+---
+
+## What you see
+
+Above the candlestick chart, Simple Trade shows a compact price panel displaying the name of the currently selected coin and its latest price in USD. The price updates continuously as the Binance WebSocket stream delivers new data — typically once per second during active trading hours.
+
+<Note>
+  The displayed price is the `close` value from the most recent 1-minute Kline candle, not a raw tick price. It reflects where the current candle's close stands at the moment the latest message arrived.
+</Note>
+
+## How the price is extracted
+
+The `useCryptoSocket` hook receives raw JSON messages from the C++ backend over a local WebSocket at `ws://127.0.0.1:8080`. Each message contains a `Kline` object with OHLC fields. The hook reads the `Close` field and converts it to a float:
+
+```jsx
+const k = lastJsonMessage.Kline;
+const close = parseFloat(k.Close);
+
+setPrice(close);
+```
+
+`price` is then returned from the hook and passed down to `ShowPrice` from `App.jsx`:
+
+```jsx
+const { price, latestCandle } = useCryptoSocket(currentCoin);
+
+// ...
+
+<ShowPrice price={price} coin={currentCoin} />
+```
+
+When you switch coins, `price` resets to `null` and the display clears until the first message for the new coin arrives.
+
+## What the component renders
+
+`ShowPrice` is a minimal presentational component. It receives `price` and `coin` as props and renders the coin name alongside the formatted price:
+
+```jsx
+const ShowPrice = ({ price, coin }) => {
+  return (
+    <div className="ShowPrice-wrapper-div">
+      <nav className="ShowPrice">
+        <h3 className="PriceHeader">{coin}'s Price</h3>
+        <h3 className="Price">${price}</h3>
+      </nav>
+    </div>
+  )
+}
+```
+
+The two headings are laid out side-by-side using `justify-content: space-between`, so the coin label sits on the left and the dollar value on the right within the panel.
+
+## Component props
+
+| Prop    | Type              | Description                                                        |
+| ------- | ----------------- | ------------------------------------------------------------------ |
+| `price` | `string \| number` | The latest close price for the selected coin. `null` before the first tick arrives. |
+| `coin`  | `string`          | The active coin symbol (e.g., `"BTCUSDT"`). Displayed as the panel label. |
+
+## Update frequency
+
+Binance sends Kline stream updates approximately once per second while the market is active. Each message updates both the [candlestick chart](/features/live-charts) and the price display simultaneously, since both consume the same `latestCandle` and `price` values returned by `useCryptoSocket`.

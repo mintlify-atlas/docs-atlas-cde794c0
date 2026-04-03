@@ -1,0 +1,107 @@
+---
+title: "Live Candlestick Charts"
+description: "Real-time 1-minute candlestick charts powered by Binance WebSocket streams."
+---
+
+## What you see
+
+When you open Simple Trade, the main panel displays a candlestick chart for the currently selected coin. Each bar on the chart represents one minute of trading activity, showing four data points: the opening price, the highest price reached, the lowest price reached, and the closing price at the end of that minute.
+
+The chart updates continuously as Binance sends data. The current (unfinished) candle grows in real-time — its high and low extend as new ticks arrive, and it finalizes when the minute closes and a new candle begins.
+
+## How data flows to the chart
+
+The data path from Binance to the chart follows these steps:
+
+1. The C++ backend connects to the Binance Kline WebSocket stream for the selected coin and forwards raw JSON messages over a local WebSocket server at `ws://127.0.0.1:8080`.
+2. The `useCryptoSocket` hook in the frontend opens a connection to that local server and parses each incoming message.
+3. From each message, the hook constructs a `latestCandle` object and passes it to `CandlestickChart` via the `latestCandle` prop.
+4. The chart calls `series.update(latestCandle)` to paint or extend the current candle.
+
+### The `latestCandle` structure
+
+```json
+{
+  "time": 1712140800,
+  "open": 69420.50,
+  "high": 69500.00,
+  "low": 69380.25,
+  "close": 69455.75
+}
+```
+
+`time` is a Unix timestamp in seconds (derived from `StartTime / 1000` in the Kline payload). `open` is anchored to the previous candle's close price to avoid gaps between bars.
+
+## Supported coins
+
+The chart supports the following trading pairs:
+
+| Symbol   | Base asset |
+| -------- | ---------- |
+| BTCUSDT  | Bitcoin    |
+| ETHUSDT  | Ethereum   |
+| ADAUSDT  | Cardano    |
+| XRPUSDT  | XRP        |
+| DOTUSDT  | Polkadot   |
+| UNIUSDT  | Uniswap    |
+
+## Switching coins
+
+When you click a different coin in the [Watchlist](/features/watchlist), the chart clears immediately. The `CandlestickChart` component watches the `coin` prop and calls `seriesRef.current.setData([])` whenever it changes, wiping all previous bars. New candles for the selected coin start appearing as soon as the WebSocket stream delivers the first message for that pair.
+
+<Info>
+  Each candle starts building from the moment you connect to the app or switch coins — historical data is not loaded. The chart only shows candles that have arrived during your current session.
+</Info>
+
+## How the chart is built
+
+`CandlestickChart` uses the [lightweight-charts](https://tradingview.github.io/lightweight-charts/) library from TradingView. On first mount, the component creates a chart instance and attaches a candlestick series:
+
+```jsx
+const chart = LightweightCharts.createChart(chartContainerRef.current, {
+    width: chartContainerRef.current.clientWidth,
+    height: 400,
+    layout: {
+        background: { color: '#0a0a0a' },
+        textColor: '#d1d4dc',
+    },
+    grid: {
+        vertLines: { color: '#1a1a1a' },
+        horzLines: { color: '#1a1a1a' },
+    },
+    timeScale: {
+        visible: true,
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: '#2a2a2a',
+    },
+    rightPriceScale: {
+        autoScale: true,
+        borderColor: '#2a2a2a',
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+    },
+    crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+    },
+});
+
+seriesRef.current = chart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: '#26a69a',
+    downColor: '#ef5350',
+    borderUpColor: '#26a69a',
+    borderDownColor: '#ef5350',
+    wickUpColor: '#26a69a',
+    wickDownColor: '#ef5350',
+    borderVisible: true,
+});
+```
+
+Bullish (up) candles render in teal (`#26a69a`) and bearish (down) candles in red (`#ef5350`). The chart resizes automatically when the browser window changes width.
+
+Each time a new `latestCandle` arrives, the component calls:
+
+```jsx
+seriesRef.current.update(latestCandle);
+```
+
+`update()` either appends a new bar if the timestamp is newer than all existing bars, or updates the current bar in place if the timestamp matches the most recent one. This means the live candle visibly extends as price moves within the minute.

@@ -1,0 +1,113 @@
+---
+title: "BinanceProcessor"
+description: "Stateless JSON parser that converts raw Binance Kline WebSocket messages to a simplified format."
+---
+
+## Overview
+
+`BinanceProcessor` is a stateless C++ class with a single static method for converting Binance's verbose Kline JSON into a minimal `OutboundJSONStruct`. It has no instance state — all logic lives in `toSimpleKline()`.
+
+The class and its supporting structs are defined in `src/BinanceProcessor.h`. The struct shapes are registered with `nlohmann/json` via `NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE`, which allows direct serialization to JSON using `.dump()`.
+
+---
+
+## Structs
+
+### `KlineData`
+
+Holds the simplified candlestick data extracted from a Binance Kline message.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Open` | `string` | Opening price for the candle interval |
+| `Close` | `string` | Closing price for the candle interval |
+| `High` | `string` | Highest price during the interval |
+| `Low` | `string` | Lowest price during the interval |
+| `KlineFinished` | `bool` | `true` when the candle interval is complete |
+
+<Note>
+  `KlineFinished` corresponds to the `x` field in Binance's Kline object. When `true`, the candle for the current interval will not be updated further.
+</Note>
+
+---
+
+### `OutboundJSONStruct`
+
+The top-level struct sent to the frontend WebSocket clients.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `EventTime` | `uint64_t` | Binance event timestamp in milliseconds |
+| `Coin` | `string` | Coin symbol (e.g., `"ETHUSDT"`) |
+| `Kline` | `KlineData` | The simplified candle data |
+
+---
+
+## Static method
+
+### `static OutboundJSONStruct toSimpleKline(const json& received)`
+
+Parses a raw Binance Kline WebSocket message and returns a simplified `OutboundJSONStruct`.
+
+<ParamField path="received" type="const json&" required>
+  A parsed `nlohmann::json` object from a Binance `@kline_1m` stream message. Must contain top-level keys `E` (event time), `s` (symbol), and a nested `k` object with fields `o`, `c`, `h`, `l`, and `x`.
+</ParamField>
+
+**Returns:** An `OutboundJSONStruct` with `EventTime`, `Coin`, and `Kline` populated.
+
+**Implementation** (from `src/BinanceProcessor.h`):
+
+```cpp
+static OutboundJSONStruct toSimpleKline(const json &received) {
+    OutboundJSONStruct outbound;
+    outbound.EventTime = received["E"];
+    outbound.Coin = received["s"];
+    outbound.Kline.Open = received["k"]["o"];
+    outbound.Kline.Close = received["k"]["c"];
+    outbound.Kline.High = received["k"]["h"];
+    outbound.Kline.Low = received["k"]["l"];
+    outbound.Kline.KlineFinished = received["k"]["x"];
+    return outbound;
+}
+```
+
+---
+
+## Example
+
+The following is a real Binance Kline message captured from a live connection and used as the `BinanceKline` fixture in `test/ExchangeClientTest.cpp`:
+
+```json
+{
+  "E": 1773198900017,
+  "e": "kline",
+  "s": "ETHUSDT",
+  "k": {
+    "B": "0",
+    "L": "-1",
+    "Q": "0.00000000",
+    "T": 1773198899999,
+    "V": "0.00000000",
+    "c": "2023.78000000",
+    "f": "-1",
+    "h": "2023.78000000",
+    "i": "1m",
+    "l": "2023.78000000",
+    "n": 0,
+    "o": "2023.78000000",
+    "q": "0.00000000",
+    "s": "ETHUSDT",
+    "t": 1773198840000,
+    "v": "0.00000000",
+    "x": true
+  }
+}
+```
+
+After passing through `toSimpleKline()` and serializing with `.dump(0)`, the simplified output sent to the frontend is:
+
+```json
+{"Coin":"ETHUSDT","EventTime":1773198900017,"Kline":{"Close":"2023.78000000","High":"2023.78000000","KlineFinished":true,"Low":"2023.78000000","Open":"2023.78000000"}}
+```
+
+`BinanceProcessor` discards all fields not needed by the frontend — volume, trade counts, interval timestamps, and other metadata are stripped in the process.

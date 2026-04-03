@@ -1,0 +1,62 @@
+---
+title: "Design Patterns"
+description: "Design patterns used in Simple Trade and planned future patterns."
+---
+
+This page documents the design patterns present in Simple Trade's current architecture and the patterns being considered for future development.
+
+## Current patterns
+
+<AccordionGroup>
+  <Accordion title="Observer — React component tree">
+    `App.jsx` acts as the Subject. `WatchList.jsx`, `ShowPrice.jsx`, and `CandlestickChart.jsx` are its Observers.
+
+    The `currentCoin` state in `App.jsx` is the observable value. When a user selects a different coin in the watchlist, `currentCoin` updates and React re-renders all dependent components. This keeps the displayed price, chart, and watchlist highlight in sync with the active WebSocket stream without any component communicating directly with another.
+
+    While `App.jsx` does not implement a formal Observer interface, the React state-and-props model achieves the same intent described by the pattern: a one-to-many dependency where all dependents are notified and updated automatically when the Subject's state changes.
+  </Accordion>
+
+  <Accordion title="Strategy (emerging) — ExchangeClient and BinanceProcessor">
+    `ExchangeClient.h` and `BinanceProcessor.h` separate two distinct responsibilities that were originally entangled in a single file:
+
+    - `ExchangeClient` manages the WebSocket lifecycle (connect, disconnect, message dispatch).
+    - `BinanceProcessor` handles JSON parsing and transformation of Binance-specific message formats.
+
+    This decoupling is a step toward the Strategy pattern. The WebSocket connection logic is no longer aware of the data format it receives, which means a different data source — for example, a Coinbase stream — could be supported by swapping in a different processor without changing `ExchangeClient`.
+  </Accordion>
+
+  <Accordion title="Iterator (primitive) — coins vector">
+    In `src/Binance_Websockets.cpp`, the `coins` vector acts as a primitive iterator over the set of active coins:
+
+    ```cpp
+    vector<string> coins = {"btcusdt", "ethusdt", "adausdt",
+                            "xrpusdt", "dotusdt", "uniusdt"};
+    ```
+
+    The `main()` function iterates over this vector to spawn one `ExchangeClient` thread per coin, building both the watchlist and the set of active chart series. A more structured iterator would allow the `WatchList` and `CandlestickChart` components to be combined and constructed from a single pass over the coin list.
+  </Accordion>
+</AccordionGroup>
+
+## Potential future patterns
+
+<AccordionGroup>
+  <Accordion title="Singleton — user configuration">
+    A Singleton class could manage user configuration: which coins are tracked, display preferences, and any other settings that should persist across sessions. On launch, the application would load the saved configuration from disk through the Singleton instance rather than always starting with the hardcoded defaults.
+  </Accordion>
+
+  <Accordion title="Memento — chart data snapshots">
+    Keeping a WebSocket stream open in the background for every coin the user is not currently viewing is resource-intensive. The Memento pattern could solve this by storing 5-minute snapshots of the necessary candlestick JSON data for each coin. When a user switches to a coin's chart, the chart is rebuilt from the stored snapshot and the stream reconnects, rather than requiring a continuous background connection.
+  </Accordion>
+
+  <Accordion title="Chain of Responsibility — WebSocket message routing">
+    Currently, all WebSocket data flows into `App.jsx`, which routes it to child components based on `currentCoin`'s state. Introducing a Chain of Responsibility would move this routing logic into a dedicated handler chain, decoupling message dispatch from React state management and making it easier to add new message types or processing steps without modifying `App.jsx`.
+  </Accordion>
+
+  <Accordion title="Adapter — multiple chart types">
+    If candlestick and line charts are both supported in the future, the data formats required to build each type differ significantly. An Adapter class could translate the raw WebSocket data into whichever format the active chart type requires, without changing the WebSocket layer. Switching chart types would also need to activate the appropriate WebSocket stream for that data format.
+  </Accordion>
+
+  <Accordion title="Command + Interpreter — buy/sell lifecycle">
+    The Command pattern is a strong fit for building generic buy and sell lifecycle actions that both manual user input and the AI assistant can invoke in a unified way. The Interpreter pattern would complement this by tokenizing chart signals — wicks, highs, lows, technical indicators — into a form the AI can reason over, without coupling the AI layer directly to the raw WebSocket data structures.
+  </Accordion>
+</AccordionGroup>

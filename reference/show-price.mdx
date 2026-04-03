@@ -1,0 +1,55 @@
+---
+title: "ShowPrice"
+description: "Displays the latest price for the active cryptocurrency."
+---
+
+## Overview
+
+`ShowPrice` is a presentational component that renders the active coin's name and its current market price. It re-renders on every WebSocket tick, giving users a live numeric readout alongside the candlestick chart.
+
+<Note>
+  `price` is the `close` value from the most recent Kline interval delivered over the WebSocket. It reflects the last traded price within the current 1-minute candle, not a confirmed closing price (unless `KlineFinished` is `true` for that message).
+</Note>
+
+---
+
+## Props
+
+<ParamField path="price" type="string | number" required>
+  The latest close price from the WebSocket stream. Rendered with a `$` prefix. Sourced from `useCryptoSocket`'s `price` return value in `App`.
+</ParamField>
+
+<ParamField path="coin" type="string" required>
+  The coin symbol to display (e.g., `"BTCUSDT"`). Rendered as a heading label in the format `{coin}'s Price`.
+</ParamField>
+
+---
+
+## What it renders
+
+The component outputs two headings inside a styled `nav` wrapper:
+
+- A label heading: the `coin` value followed by `'s Price'`
+- A price heading: the `price` value prefixed with `$`
+
+---
+
+## Source
+
+```jsx ShowPrice.jsx
+import '../css/ShowPrice.css'
+
+const ShowPrice = ({ price, coin }) => {
+
+  return (
+    <div className="ShowPrice-wrapper-div">
+      <nav className="ShowPrice">
+        <h3 className="PriceHeader">{coin}'s Price</h3>
+        <h3 className="Price">${price}</h3>
+      </nav>
+    </div>
+  )
+}
+
+export default ShowPrice
+```

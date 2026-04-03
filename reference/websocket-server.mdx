@@ -1,0 +1,103 @@
+---
+title: "WebSocket Server"
+description: "The local WebSocket server that bridges Binance market data to the frontend."
+---
+
+## Overview
+
+A local WebSocket server runs on `127.0.0.1:8080` and broadcasts simplified Kline JSON to connected frontend clients (the React app). It acts as the bridge between the `ExchangeClient` instances polling Binance and the UI rendering live price data.
+
+The server is implemented using `ix::WebSocketServer` from IXWebSocket and is declared as a global in `src/Binance_Websockets.cpp`.
+
+---
+
+## Configuration
+
+| Property | Value |
+|----------|-------|
+| Host | `127.0.0.1` |
+| Port | `8080` |
+| Library | IXWebSocket (`ix::WebSocketServer`) |
+
+---
+
+## Behavior
+
+### Starting the server
+
+The server is started on a background thread via `StartServer()`, which calls `Server.listenAndStart()`. This is a **blocking call** — `StartServer()` does not return until `Server.stop()` is called.
+
+```cpp
+WebSocketServer Server(8080, "127.0.0.1");
+
+void StartServer() {
+    Server.setOnClientMessageCallback(
+        [](shared_ptr<ix::ConnectionState> connectionState, WebSocket &webSocket,
+           const MessagePtr &msg) {});
+    Server.listenAndStart();
+}
+```
+
+The empty `setOnClientMessageCallback` body is intentional: the server does not currently need to respond to messages from frontend clients. The callback must still be set to avoid a warning from IXWebSocket.
+
+In `main()`, the server thread is spawned as:
+
+```cpp
+thread ServerThread(StartServer);
+```
+
+### Broadcasting to clients
+
+When `ExchangeClient` receives a message from Binance, the `SetOnMessage` callback parses it with `BinanceProcessor` and immediately broadcasts the simplified JSON to all connected frontend clients:
+
+```cpp
+client->SetOnMessage([](const string &msg) {
+    BinanceProcessor Processor;
+    json received = json::parse(msg);
+    json shortened = Processor.toSimpleKline(received);
+    for (auto &&client : Server.getClients()) {
+        client->send(shortened.dump(0));
+    }
+});
+```
+
+All clients connected to `127.0.0.1:8080` receive the same broadcast on every Binance update.
+
+---
+
+## Message format
+
+The JSON sent to each frontend client on every Kline update:
+
+```json
+{
+  "EventTime": 1773198900017,
+  "Coin": "ETHUSDT",
+  "Kline": {
+    "Open": "2023.78000000",
+    "Close": "2023.78000000",
+    "High": "2023.78000000",
+    "Low": "2023.78000000",
+    "KlineFinished": true
+  }
+}
+```
+
+See [BinanceProcessor](/reference/binance-processor) for the full description of each field and how the raw Binance message is transformed into this format.
+
+---
+
+## Shutdown
+
+`Server.listenAndStart()` blocks indefinitely. To shut down cleanly, `Server.stop()` must be called explicitly before joining `ServerThread`.
+
+In `main()`, this happens after `StartWebview()` returns (i.e., the user closes the app window):
+
+```cpp
+Server.stop();
+ServerThread.join();
+```
+
+<Note>
+  If you join `ServerThread` without calling `Server.stop()` first, the join will block forever. Always call `Server.stop()` before joining the server thread.
+</Note>

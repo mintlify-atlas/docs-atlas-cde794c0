@@ -1,0 +1,95 @@
+---
+title: "Installation"
+description: "Install dependencies, build the frontend and backend, and launch Simple Trade."
+---
+
+<Steps>
+
+<Step title="Install prerequisites">
+
+Simple Trade requires **Node.js v16+** and **CMake v3.24+**. On Windows, you also need **Visual Studio** (for the MSVC toolchain) and **nmake**.
+
+Verify your versions before proceeding:
+
+```bash
+node -v
+npm -v
+cmake --version
+```
+
+If any command is not recognized:
+
+- Download Node.js at [nodejs.org/en/download](https://nodejs.org/en/download).
+- Download CMake at [cmake.org/download](https://cmake.org/download/), or install it via your system package manager (`brew install cmake`, `apt install cmake`, etc.).
+
+</Step>
+
+<Step title="Clone the repository">
+
+```bash
+git clone https://github.com/IUS-CS/project-midwest-market-machines.git
+cd project-midwest-market-machines
+```
+
+</Step>
+
+<Step title="Build the React frontend">
+
+Navigate into the `MarketUI/` directory and build the frontend. This produces a `dist/index.html` file that the C++ backend will load.
+
+<Tabs>
+  <Tab title="Windows (PowerShell)">
+    ```powershell
+    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+    npm install --legacy-peer-deps
+    npm run build
+    ```
+
+    <Tip>
+      The `--legacy-peer-deps` flag suppresses peer dependency conflict errors. Any warning printed after this command can be safely ignored.
+    </Tip>
+  </Tab>
+  <Tab title="macOS / Linux (Bash)">
+    ```bash
+    npm install
+    npm run build
+    ```
+  </Tab>
+</Tabs>
+
+</Step>
+
+<Step title="Build the C++ backend">
+
+From the project root directory, configure CMake and compile the backend. The output binary is `Binance_Websockets.exe`.
+
+<Tabs>
+  <Tab title="Windows (PowerShell)">
+    ```powershell
+    cmake -S . -B build/ -G "MinGW Makefiles"
+    cd build/
+    nmake
+    ./Binance_Websockets.exe
+    ```
+
+    <Warning>
+      On the first Windows build, CMake automatically clones and bootstraps [vcpkg](https://github.com/microsoft/vcpkg) into the project directory and uses it to install `zlib` and `mbedtls`. This step requires an active internet connection and may take several minutes.
+    </Warning>
+  </Tab>
+  <Tab title="macOS / Linux (Bash)">
+    ```bash
+    cmake -S . -B build/
+    cd build/
+    make
+    ./Binance_Websockets
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  CMake fetches all C++ dependencies (IXWebSocket, nlohmann/json, webview, GoogleTest, zlib, mbedtls) from GitHub on the first build. Subsequent builds skip this step and are significantly faster.
+</Note>
+
+</Step>
+
+</Steps>

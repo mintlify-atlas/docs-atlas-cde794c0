@@ -1,0 +1,93 @@
+---
+title: "Watchlist"
+description: "Coin watchlist panel for selecting the active cryptocurrency."
+---
+
+## Overview
+
+`Watchlist` renders a vertical list of tracked coins and highlights the one currently being viewed. Clicking any coin calls the `onCoin` callback, which updates `currentCoin` in `App` and triggers a full data refresh across all other components.
+
+<Tip>
+  The active coin is visually highlighted with an `active` CSS class, so users always know which coin they are currently viewing without needing to look at the chart header.
+</Tip>
+
+---
+
+## Props
+
+<ParamField path="onCoin" type="function" required>
+  Callback invoked when the user clicks a coin. Receives the selected coin symbol string as its only argument (e.g., `"ETHUSDT"`). In `App`, this is wired to `setCurrentCoin`.
+</ParamField>
+
+<ParamField path="currentCoin" type="string" required>
+  The currently active coin symbol. Used to apply the `active` CSS class to the matching list item.
+</ParamField>
+
+---
+
+## Tracked coins
+
+The following coins are hardcoded in the component and rendered as clickable list items. The `USDT` suffix is stripped for display.
+
+| Symbol    | Displayed as |
+| --------- | ------------ |
+| BTCUSDT   | BTC          |
+| ETHUSDT   | ETH          |
+| ADAUSDT   | ADA          |
+| XRPUSDT   | XRP          |
+| DOTUSDT   | DOT          |
+| UNIUSDT   | UNI          |
+
+---
+
+## How selection works
+
+Each list item is rendered from the `coins` array. When clicked, it calls `onCoin(coin)` with the full symbol (e.g., `"ADAUSDT"`). The `currentCoin` prop is compared against each coin symbol to apply the `active` class.
+
+```jsx Watchlist.jsx
+{coins.map((coin) => (
+  <li
+    key={coin}
+    className={currentCoin === coin ? "active" : ""}
+    onClick={() => onCoin(coin)}
+    style={{ cursor: 'pointer' }}
+  >
+    {coin.replace('USDT', '')}
+  </li>
+))}
+```
+
+---
+
+## Source
+
+```jsx Watchlist.jsx
+import { useState } from 'react';
+import '../css/Watchlist.css'
+
+const Watchlist = ({ onCoin, currentCoin }) => {
+  const coins = ["BTCUSDT", "ETHUSDT", "ADAUSDT", "XRPUSDT", "DOTUSDT", "UNIUSDT"];
+
+  return (
+    <div className="watchlist-wrapper-div">
+      <nav className="watchlist">
+        <h2>My Watchlist</h2>
+        <ul>
+          {coins.map((coin) => (
+            <li
+              key={coin}
+              className={currentCoin === coin ? "active" : ""}
+              onClick={() => onCoin(coin)}
+              style={{ cursor: 'pointer' }}
+            >
+              {coin.replace('USDT', '')}
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </div>
+  );
+}
+
+export default Watchlist;
+```

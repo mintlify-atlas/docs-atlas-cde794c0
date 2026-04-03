@@ -1,0 +1,179 @@
+---
+title: "Frontend Architecture"
+description: "How the React frontend receives live market data and renders candlestick charts."
+---
+
+The frontend is a React application (Vite) bundled into a static `index.html` that the C++ backend loads directly into a native desktop webview.
+
+## Component hierarchy
+
+`App` is the single state coordinator. All other components either receive state from it or report user input back through it.
+
+```
+App
+├── Navbar
+├── Watchlist        — reports selected coin via onCoin prop
+├── ShowPrice        — displays latest close price for currentCoin
+└── CandlestickChart — renders the candlestick series for currentCoin
+```
+
+`App` holds one piece of state (`currentCoin`, defaulting to `BTCUSDT`) and calls `useCryptoSocket(currentCoin)` to receive the live data stream.
+
+## App.jsx
+
+```jsx
+import { useState } from 'react'
+import Navbar from './components/navBar'
+import Watchlist from './components/Watchlist'
+import useCryptoSocket from './useCryptoSocket'
+import ShowPrice from './components/ShowPrice'
+import CandlestickChart from './components/CandlestickChart'
+
+function App() {
+  const [currentCoin, setCurrentCoin] = useState('BTCUSDT');
+  const { price, latestCandle } = useCryptoSocket(currentCoin);
+
+  return (
+    <>
+      <Navbar />
+      <div className="App_header">
+        <h1>Simple Trade</h1>
+        <p>Your one-stop shop for all things crypto!</p>
+      </div>
+      <div className="main_layout">
+        <Watchlist onCoin={(c) => setCurrentCoin(c)} currentCoin={currentCoin} />
+        <div className="flex_row">
+          <ShowPrice price={price} coin={currentCoin} />
+          <CandlestickChart coin={currentCoin} latestCandle={latestCandle} />
+        </div>
+      </div>
+    </>
+  )
+}
+```
+
+### Observer-like pattern
+
+`App` acts as a subject. `Watchlist`, `ShowPrice`, and `CandlestickChart` are observers of `currentCoin`:
+
+- `Watchlist` calls `onCoin(coin)` when the user clicks a coin, which triggers `setCurrentCoin` in `App`.
+- `ShowPrice` and `CandlestickChart` re-render whenever `currentCoin` or its derived data (`price`, `latestCandle`) changes.
+
+Because each component has a narrowly defined purpose, the props passed between them are easy to understand and test in isolation.
+
+## useCryptoSocket hook
+
+`useCryptoSocket(selectedCoin)` manages the WebSocket connection and all candle-building state.
+
+```jsx
+const useCryptoSocket = (selectedCoin) => {
+  const [price, setPrice] = useState(null);
+  const SOCKET_URL = "ws://127.0.0.1:8080";
+
+  const [latestCandle, setLatestCandle] = useState(null);
+  const candleMapRef = useRef(new Map());
+  const lastCloseRef = useRef(null);
+  const prevCoinRef = useRef(null);
+  const [lastJsonMessage, setLastJsonMessage] = useState(null);
+
+  // ...
+
+  return { price, latestCandle };
+};
+```
+
+The hook returns `{ price, latestCandle }`. `App` destructures both and passes them down to `ShowPrice` and `CandlestickChart` respectively.
+
+### WebSocket connection
+
+A single WebSocket is opened once on mount:
+
+```jsx
+useEffect(() => {
+    const socket = new WebSocket(SOCKET_URL);
+    socket.onmessage = (event) => {
+        const jsonReceived = JSON.parse(event.data);
+        setLastJsonMessage(jsonReceived);
+    }
+    return () => socket.close();
+}, []);
+```
+
+The empty dependency array `[]` ensures the connection is established exactly once and closed on unmount.
+
+### Coin switch handling
+
+When `selectedCoin` changes, a `useEffect` compares it against `prevCoinRef`. If they differ, all accumulated candle state is reset:
+
+```jsx
+useEffect(() => {
+    if (prevCoinRef.current !== selectedCoin) {
+        candleMapRef.current = new Map();
+        lastCloseRef.current = null;
+        setLatestCandle(null);
+        setPrice(null);
+        prevCoinRef.current = selectedCoin;
+    }
+}, [selectedCoin]);
+```
+
+`CandlestickChart` also observes `coin` directly and calls `seriesRef.current.setData([])` to wipe the chart as soon as the coin changes.
+
+<Note>
+  `candleMapRef` and `lastCloseRef` are refs rather than state so that they can be mutated synchronously inside a `useEffect` without triggering additional renders.
+</Note>
+
+### Candle construction
+
+Each incoming message is filtered by `Coin` field before processing. If the coin does not match `selectedCoin`, the message is ignored. For matching messages, the hook builds a candle object:
+
+```jsx
+useEffect(() => {
+    if (!lastJsonMessage || lastJsonMessage.Coin !== selectedCoin || !lastJsonMessage.Kline) { return; }
+
+    const k = lastJsonMessage.Kline;
+    const open = parseFloat(k.Open);
+    const high = parseFloat(k.High);
+    const low = parseFloat(k.Low);
+    const close = parseFloat(k.Close);
+
+    const timeSeconds = Math.floor(k.StartTime / 1000);
+    const existingCandle = candleMapRef.current.get(timeSeconds);
+    const realOpen = existingCandle ? existingCandle.open : (lastCloseRef.current ?? open);
+
+    const candle = {
+        time: timeSeconds,
+        open: realOpen,
+        high: Math.max(high, realOpen, close),
+        low: Math.min(low, realOpen, close),
+        close: close,
+    };
+
+    candleMapRef.current.set(timeSeconds, candle);
+
+    if (k.KlineFinished) { lastCloseRef.current = close; }
+
+    setPrice(close);
+    setLatestCandle(candle);
+}, [lastJsonMessage, selectedCoin]);
+```
+
+`realOpen` uses the previously seen candle for the same timestamp if one exists, falling back to `lastCloseRef` (the close of the previous finished candle) to ensure candles connect correctly. When `KlineFinished` is `true`, the close price is saved to `lastCloseRef` to seed the next candle's open.
+
+## CandlestickChart
+
+`CandlestickChart` receives `coin` and `latestCandle` as props. It creates a `lightweight-charts` chart instance once on mount, resets the series data when `coin` changes, and calls `seriesRef.current.update(latestCandle)` on each new candle:
+
+```jsx
+// Appends candles when they have new timestamps, updates the candle if not
+useEffect(() => {
+    if (!seriesRef.current || !latestCandle) return;
+    try {
+        seriesRef.current.update(latestCandle);
+    } catch (err) {
+        console.warn('[CandlestickChart] update() skipped (stale candle on coin switch):', err.message);
+    }
+}, [latestCandle]);
+```
+
+`lightweight-charts`'s `update()` method appends a new bar if the timestamp is later than the last bar, or updates the existing bar in place if the timestamp matches — matching the one-candle-per-minute Kline interval from Binance.

@@ -1,0 +1,157 @@
+---
+title: "ExchangeClient"
+description: "A generic WebSocket client class for connecting to exchange data streams."
+---
+
+## Overview
+
+`ExchangeClient` is a C++ class that wraps IXWebSocket to simplify connecting to an exchange's WebSocket stream. It provides configurable callbacks for all message types — open, message, close, and error — and handles message dispatch internally via a protected `HandleMessages` method.
+
+The class is defined in `src/ExchangeClient.h`.
+
+---
+
+## Constructor
+
+`ExchangeClient()` takes no arguments. All configuration is done through the setter methods before calling `Connect()`.
+
+---
+
+## Public methods
+
+### `void Connect(string stream)`
+
+Sets the WebSocket URL and starts the connection. Uses `socket.start()`, which is non-blocking — the socket runs on a background thread managed by IXWebSocket. The thread calling `Connect()` must remain alive for the socket to stay active.
+
+<ParamField path="stream" type="string" required>
+  The full WebSocket URL to connect to. For example: `wss://stream.binance.us:9443/ws/btcusdt@kline_1m`
+</ParamField>
+
+<Note>
+  If `DEBUG` is enabled, `Connect()` prints the subscribed stream URL to stdout before starting the socket.
+</Note>
+
+---
+
+### `void SetOnMessage(function<void(const string&)> Behavior)`
+
+Sets the callback invoked when a text message is received from the stream.
+
+<ParamField path="Behavior" type="function<void(const string&)>" required>
+  A function that receives the raw message string from the WebSocket.
+</ParamField>
+
+---
+
+### `void SetOnOpen(function<void()> Behavior)`
+
+Sets the callback invoked when the WebSocket connection is successfully opened.
+
+<ParamField path="Behavior" type="function<void()>" required>
+  A zero-argument function called on connection open.
+</ParamField>
+
+---
+
+### `void SetOnClose(function<void()> Behavior)`
+
+Sets the callback invoked when the WebSocket connection closes. The socket is also closed internally when a `Close` message type is received — `socket.close()` is called inside `HandleMessages`.
+
+<ParamField path="Behavior" type="function<void()>" required>
+  A zero-argument function called on connection close.
+</ParamField>
+
+---
+
+### `void SetOnError(function<void(const string&)> Behavior)`
+
+Sets the callback invoked when a connection error occurs.
+
+<ParamField path="Behavior" type="function<void(const string&)>" required>
+  A function that receives the error reason string from `msg->errorInfo.reason`.
+</ParamField>
+
+---
+
+### `ix::ReadyState GetState()`
+
+Returns the current connection state of the underlying WebSocket socket.
+
+**Returns:** an `ix::ReadyState` enum value:
+
+| Value | Integer | Meaning |
+|-------|---------|---------|
+| `Connecting` | `0` | Socket is initiating a connection |
+| `Open` | `1` | Connection is active |
+| `Closing` | `2` | Connection is shutting down |
+| `Closed` | `3` | Connection is closed |
+
+---
+
+### `void SetDEBUG(bool debug)`
+
+Enables or disables debug logging to stdout.
+
+<ParamField path="debug" type="bool" required>
+  Pass `true` to enable debug output. When enabled, `Connect()` prints the subscribed stream URL and `HandleMessages()` prints each received message body. Defaults to `false`.
+</ParamField>
+
+---
+
+## Protected methods
+
+### `void HandleMessages(const MessagePtr& msg)`
+
+Dispatches incoming WebSocket messages to the registered callbacks based on `msg->type`. Marked `protected` to allow subclassing for test injection — see `TestClient` in `test/ExchangeClientTest.cpp` for an example.
+
+```cpp
+void HandleMessages(const MessagePtr &msg) {
+    switch (msg->type) {
+    case MessageType::Open:
+      if (OnOpen) { OnOpen(); }
+      break;
+    case MessageType::Message:
+      if (OnMessage) { OnMessage(msg->str); }
+      if (DEBUG) {
+        PrintLocker.lock();
+        cout << "Received Message:\n" << msg->str << "\n" << endl;
+        PrintLocker.unlock();
+      }
+      break;
+    case MessageType::Close:
+      if (OnClose) { OnClose(); }
+      socket.close();
+      break;
+    case MessageType::Error:
+      if (OnError) { OnError(msg->errorInfo.reason); }
+      break;
+    default:
+      break;
+    }
+}
+```
+
+---
+
+## Example usage
+
+The following is taken directly from `main()` in `src/Binance_Websockets.cpp`. A unique `ExchangeClient` is created per coin, configured with a message callback that parses and broadcasts Kline data, then connected to its stream on a dedicated thread.
+
+```cpp
+auto client = make_unique<ExchangeClient>();
+client->SetDEBUG(true);
+client->SetOnMessage([](const string &msg) {
+    BinanceProcessor Processor;
+    json received = json::parse(msg);
+    json shortened = Processor.toSimpleKline(received);
+    for (auto &&client : Server.getClients()) {
+        client->send(shortened.dump(0));
+    }
+});
+string uri = "wss://stream.binance.us:9443/ws/" + coin + "@kline_1m";
+clientThreadsVector.emplace_back([client = client.get(), uri]() { client->Connect(uri); });
+```
+
+<Note>
+  `ExchangeClient` uses `socket.start()`, which is non-blocking. The thread passed to `clientThreadsVector` must be kept alive (not joined prematurely) for the socket to continue receiving messages. In `main()`, the threads are joined only after `Server.stop()` and `StartWebview()` return.
+</Note>

@@ -1,0 +1,136 @@
+---
+title: "Backend Architecture"
+description: "How the C++ backend connects to Binance, parses market data, and serves it to the frontend."
+---
+
+The backend is a single C++ binary (`Binance_Websockets`) composed of three parts:
+
+| Component | Role |
+|---|---|
+| `ExchangeClient` | Generic, reusable WebSocket client |
+| `BinanceProcessor` | Stateless JSON parser |
+| `Binance_Websockets.cpp` | Entry point — wires everything together |
+
+## ExchangeClient
+
+`ExchangeClient` encapsulates an `ix::WebSocket` and exposes setter methods for configuring behavior on each message type (`OnMessage`, `OnOpen`, `OnClose`, `OnError`). It has no knowledge of Binance or JSON — it is a general-purpose WebSocket client designed for reuse.
+
+The protected `HandleMessages` method dispatches each incoming `ix::WebSocketMessagePtr` to the appropriate callback, which makes subclassing and unit testing straightforward without requiring a live connection.
+
+```cpp
+void Connect(string stream) {
+    socket.setUrl(stream);
+    socket.setOnMessageCallback(
+        [this](const MessagePtr &msg) -> void { HandleMessages(msg); });
+    socket.start();
+}
+```
+
+<Tip>
+  `socket.start()` is non-blocking. The `ExchangeClient` runs on whatever thread calls `Connect()`, which is why `main` places each client on its own `std::thread`.
+</Tip>
+
+## BinanceProcessor
+
+`BinanceProcessor` is a stateless class with one public static method: `toSimpleKline()`. It maps Binance's verbose Kline stream payload to a minimal `OutboundJSONStruct` that the frontend knows how to consume.
+
+### Struct definitions
+
+```cpp
+struct KlineData {
+  string Open;
+  string Close;
+  string High;
+  string Low;
+  bool KlineFinished;
+};
+
+struct OutboundJSONStruct {
+  uint64_t EventTime;
+  string Coin;
+  KlineData Kline;
+};
+```
+
+### Parsing logic
+
+```cpp
+static OutboundJSONStruct toSimpleKline(const json &received) {
+    OutboundJSONStruct outbound;
+    outbound.EventTime = received["E"];
+    outbound.Coin = received["s"];
+    outbound.Kline.Open = received["k"]["o"];
+    outbound.Kline.Close = received["k"]["c"];
+    outbound.Kline.High = received["k"]["h"];
+    outbound.Kline.Low = received["k"]["l"];
+    outbound.Kline.KlineFinished = received["k"]["x"];
+    return outbound;
+}
+```
+
+`nlohmann/json`'s `NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE` macro generates serialization for both structs, so calling `.dump(0)` on the result produces the JSON string sent to the frontend.
+
+## Startup sequence
+
+`main` initializes the network system, defines the coin list, starts the local server in a background thread, creates one `ExchangeClient` per coin, then opens the webview window.
+
+```cpp
+vector<string> coins = {"btcusdt", "ethusdt", "adausdt",
+                        "xrpusdt", "dotusdt", "uniusdt"};
+
+thread ServerThread(StartServer);
+
+// For each coin: create ExchangeClient, SetDEBUG, SetOnMessage, Connect
+for (const string &coin : coins) {
+    auto client = make_unique<ExchangeClient>();
+    client->SetDEBUG(true);
+    client->SetOnMessage([](const string &msg) {
+        BinanceProcessor Processor;
+        json received = json::parse(msg);
+        json shortened = Processor.toSimpleKline(received);
+        for (auto &&client : Server.getClients()) {
+            client->send(shortened.dump(0));
+        }
+    });
+
+    string uri = "wss://stream.binance.us:9443/ws/" + coin + "@kline_1m";
+
+    clientThreadsVector.emplace_back(
+        [client = client.get(), uri]() { client->Connect(uri); });
+
+    ExchangeClientPointersVector.push_back(move(client));
+}
+
+StartWebview(FrontendPath);
+```
+
+## Local WebSocket server
+
+The server is a global `ix::WebSocketServer` bound to `127.0.0.1:8080`:
+
+```cpp
+WebSocketServer Server(8080, "127.0.0.1");
+```
+
+`StartServer()` sets a no-op client message callback (required by IXWebSocket to suppress warnings) then calls `Server.listenAndStart()`, which **blocks** the server thread for the lifetime of the process. The server is stopped explicitly after `StartWebview()` returns:
+
+```cpp
+Server.stop();
+ServerThread.join();
+```
+
+## Webview window
+
+<Note>
+  The app embeds the compiled React frontend directly in a native desktop window. `StartWebview` opens `../MarketUI/dist/index.html` — the output of `npm run build` — rather than connecting to a dev server. The window is titled "Simple Trade" and opens at a fixed 1200×800 size.
+</Note>
+
+```cpp
+void StartWebview(filesystem::path FrontendPath) {
+    WebView Window(true, nullptr);
+    Window.set_title("Simple Trade");
+    Window.set_size(1200, 800, WEBVIEW_HINT_NONE);
+    Window.navigate("file://" + FrontendPath.generic_string());
+    Window.run();
+}
+```
